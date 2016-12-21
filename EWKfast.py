@@ -17,22 +17,32 @@ if __name__ == "__main__":
     Tabs.add( key=('NLO','13','NNsame'), filename='NLO-13_NNsame.table', dim=2, lenF=5 )
 
     try:
-        SLHAfile = sys.argv[1]
-        mode = sys.argv[2]
-        rs = sys.argv[3]
-        order = sys.argv[4]        
+        input_file = sys.argv[1] 
+        slha_file = sys.argv[2]
     except:
-        print 'Input [SLHAfile] [mode (c1c1, n1n1, all)] [rootS] [NLO, LO]'
+        print '[input file] [SLHA file]'
         exit()
 
     dir_path = os.getcwd()
-    #dir_path = os.path.dirname( os.path.realpath(__file__) )
-    SLHApath = os.path.join(dir_path, SLHAfile)
-    params = get_params(SLHApath)
-    if params['mQ'] >= 6000: params['mQ'] = 5999.
+    slha_path = os.path.join(dir_path, slha_file)
+    params = get_params(slha_path)
+    params, range_memo = ranges(params)
 
-    if mode == 'c1c1': runmode, mass, indices = 'CCsame', params['mCha'][0], [0,0]
-    if mode == 'n1n1': runmode, mass, indices = 'NNsame', params['mNeu'][0], [0,0]
+    input_path = os.path.join(dir_path, input_file)
+    input_list = process_input(input_path)
+    for li in input_list: 
+        rs, order, mode, grid, indices = li['rs'], li['order'], li['mode'], li['grid'], li['indices']
+        res, warn = get_xsec(params, mode=grid, indices=indices, table=Tabs.tables[(order,rs,grid)])
+        print rs, order, mode, res, warn
+
+    if len(range_memo) > 0:
+        print ''
+        for memo in range_memo: print memo
+
+    exit()
+
+    if mode == 'c1c1': runmode, mass, indices = 'CCsame', params['mC'][0], [0,0]
+    if mode == 'n1n1': runmode, mass, indices = 'NNsame', params['mN'][0], [0,0]
 
     res = get_xsec(params, mode=runmode, indices=indices, table=Tabs.tables[(order,rs,runmode)])
     print '{mode} {rs} {order} xsec: '.format(mode=mode, rs=rs, order=order), res

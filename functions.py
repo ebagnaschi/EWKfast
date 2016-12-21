@@ -6,6 +6,180 @@ from math import *
 from scipy import interpolate
 from pyslha import * 
 from scipy.interpolate import interp1d, interp2d, RegularGridInterpolator
+from collections import OrderedDict
+from re import findall 
+
+class Get_Tables:
+
+    def __init__(self):
+
+        #xar = np.load( os.path.join(dirpath, grid_file + '_x') )
+        #yar = np.load( os.path.join(dirpath, grid_file + '_y') )
+        #zar = np.load( os.path.join(dirpath, grid_file + '_z') )
+        #self.xslim_interp = RegularGridInterpolator((xar, yar), zar)                
+        self.tables = {}
+
+    def add(self, key, filename, dim, lenF):
+
+        if dim == 2:
+
+            #dir_path = os.getcwd()
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            fpath = os.path.join(dir_path, 'tables', filename)
+            data = np.loadtxt(fpath)
+            m1_ar = data[:,0]
+            m2_ar = data[:,1]
+            m1 = np.array(sorted(list(set(m1_ar))))
+            m2 = np.array(sorted(list(set(m2_ar))))            
+            F_ar = []
+            for ii in xrange(lenF): 
+                Fdm = data[:,ii+2]
+                Far = Fdm.reshape(len(m1), len(m2))
+                F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
+            self.tables[key] = F_ar
+
+
+def process_input(input_path):
+    input_list = []
+    for line in open(input_path):
+        elems = line.split('#')[0].split()
+        if len(elems) != 3: continue
+        data = OrderedDict()
+        rs, order, mode = elems
+        data['rs'] = rs 
+        data['order'] = order
+        data['mode'] = mode
+        indices = findall(r'[1-4]+', mode)
+        indices = np.array(map(int, indices))
+        indices = indices - np.array([1, 1])         
+        data['indices'] = indices
+        data['grid'] = 'empty'
+        if len(mode.split('N')) == 3:
+            if mode in ['N1N1', 'N2N2', 'N3N3', 'N4N4']: 
+                data['grid'] = 'NNsame'
+            else: 
+                data['grid'] = 'NN'
+        if len(mode.split('C')) == 3:
+            if mode in ['C1C1', 'C2C2']: 
+                data['grid'] = 'CCsame'
+            else: 
+                data['grid'] = 'CC'
+        if data['grid'] == 'empty':
+            print 'grid is empty'
+            print mode, data['grid']
+        input_list.append( data )
+    return input_list
+
+
+
+def get_xsec(params, mode, indices, table):
+    i1, i2 = indices
+    if mode == 'CCsame':
+        mQ = params['mQL']
+        m1 = abs(params['mC'][i1])
+    if mode == 'NNsame':
+        mQ = params['mQL']
+        m1 = abs(params['mN'][i1])
+
+    warn = ''
+    if m1 == 1500 - 1: warn = '# mass is shifted in the grid'
+
+    vec = get_vec(mode, params, i1, i2)
+
+    Fs = []
+    for tab in table: Fs.append( tab([m1, mQ]) )  
+    Fs = np.array(Fs)
+    xsec = np.dot(vec, Fs)[0]
+    return xsec, warn
+
+def get_params(SLHAfile):
+
+    blocks, decays = readSLHAFile(SLHAfile)
+
+    mN, mC, N, V, U = [], [], [], [], []
+
+    mN.append( blocks["MASS"].entries[1000022] ) 
+    mN.append( blocks["MASS"].entries[1000023] ) 
+    mN.append( blocks["MASS"].entries[1000025] ) 
+    mN.append( blocks["MASS"].entries[1000035] ) 
+
+    mC.append( blocks["MASS"].entries[1000024] )
+    mC.append( blocks["MASS"].entries[1000037] )
+
+    mQL = 0
+    mQL += blocks["MASS"].entries[1000001]
+    mQL += blocks["MASS"].entries[1000002]
+    mQL += blocks["MASS"].entries[1000003]
+    mQL += blocks["MASS"].entries[1000004]
+    mQL = mQL/4.
+
+    mQR = 0
+    mQR += blocks["MASS"].entries[2000001]
+    mQR += blocks["MASS"].entries[2000002]
+    mQR += blocks["MASS"].entries[2000003]
+    mQR += blocks["MASS"].entries[2000004]
+    mQR = mQR/4.
+
+    for ii in xrange(4):
+        i = ii + 1
+        elem1 = blocks['NMIX'].entries[i][1]
+        elem2 = blocks['NMIX'].entries[i][2]
+        elem3 = blocks['NMIX'].entries[i][3]
+        elem4 = blocks['NMIX'].entries[i][4]
+        N.append([elem1, elem2, elem3, elem4])
+
+    for ii in xrange(2):
+        i = ii + 1        
+        v1 = blocks['VMIX'].entries[i][1]
+        v2 = blocks['VMIX'].entries[i][2]
+        u1 = blocks['UMIX'].entries[i][1]
+        u2 = blocks['UMIX'].entries[i][2]
+        V.append([v1, v2])
+        U.append([u1, u2])
+
+    params = {}
+    params['mQL'] = mQL    
+    params['mQR'] = mQR    
+    params['mN'] = mN
+    params['mC'] = mC
+    params['N'] = np.array(N)
+    params['V'] = np.array(V)
+    params['U'] = np.array(U)
+
+    return params
+
+
+def ranges(params):
+    range_memo = []
+    bound_dic = OrderedDict([('mQR', 6000), ('mQL', 6000)])
+    for p, bound in bound_dic.items():
+        if params[p] >= bound: 
+            memo = '{p} = {val} is out of range. {p} = {bound} was used.'.format(p=p,val=params[p], bound=bound)
+            range_memo.append(memo)        
+            params[p] = bound - 1
+
+    bound = 1500
+    p = 'mC'
+    for i in [0, 1]:
+        val = params[p][i]
+        if abs(val) >= bound:
+            memo = '{p}{i} = {val} is out of range. |{p}| = {bound} was used.'.format(p=p,val=params[p], bound=bound, i=i+1)
+            range_memo.append(memo)        
+            params[p][i] = bound - 1
+
+    bound = 1500
+    p = 'mN'
+    for i in [0, 1, 2, 3]:
+        val = params[p][i]
+        if abs(val) >= bound:
+            memo = '{p}{i} = {val} is out of range. |{p}| = {bound} was used.'.format(p=p,val=params[p], bound=bound, i=i+1)
+            range_memo.append(memo)        
+            params[p][i] = bound - 1
+
+
+    return params, range_memo
+
+#=================================================#
 
 sw = sqrt(1. - 80.410003662109375**2 / 91.186996459960938**2)
 cw = sqrt(1 - sw**2)
@@ -96,101 +270,8 @@ def get_vec(run_mode, params, i1, i2):
 
 #####################################################
 
-def get_params(SLHAfile):
-
-    blocks, decays = readSLHAFile(SLHAfile)
-
-    mNeu, mCha, N, V, U = [], [], [], [], []
-
-    mNeu.append( abs(blocks["MASS"].entries[1000022]) ) 
-    mNeu.append( abs(blocks["MASS"].entries[1000023]) ) 
-    mNeu.append( abs(blocks["MASS"].entries[1000025]) ) 
-    mNeu.append( abs(blocks["MASS"].entries[1000035]) ) 
-
-    mCha.append( blocks["MASS"].entries[1000024] )
-    mCha.append( blocks["MASS"].entries[1000037] )
-
-    mQ = 0
-    mQ += blocks["MASS"].entries[1000001]
-    mQ += blocks["MASS"].entries[1000002]
-    mQ += blocks["MASS"].entries[1000003]
-    mQ += blocks["MASS"].entries[1000004]
-    mQ = mQ/4.
-
-    for ii in range(4):
-        i = ii + 1
-        elem1 = blocks['NMIX'].entries[i][1]
-        elem2 = blocks['NMIX'].entries[i][2]
-        elem3 = blocks['NMIX'].entries[i][3]
-        elem4 = blocks['NMIX'].entries[i][4]
-        N.append([elem1, elem2, elem3, elem4])
-
-    for ii in range(2):
-        i = ii + 1        
-        v1 = blocks['VMIX'].entries[i][1]
-        v2 = blocks['VMIX'].entries[i][2]
-        u1 = blocks['UMIX'].entries[i][1]
-        u2 = blocks['UMIX'].entries[i][2]
-        V.append([v1, v2])
-        U.append([u1, u2])
-
-    params = {}
-    params['mQ'] = mQ    
-    params['mNeu'] = mNeu
-    params['mCha'] = mCha
-    params['N'] = np.array(N)
-    params['V'] = np.array(V)
-    params['U'] = np.array(U)
-
-    return params
 
 
-class Get_Tables:
-
-    def __init__(self):
-
-        #xar = np.load( os.path.join(dirpath, grid_file + '_x') )
-        #yar = np.load( os.path.join(dirpath, grid_file + '_y') )
-        #zar = np.load( os.path.join(dirpath, grid_file + '_z') )
-        #self.xslim_interp = RegularGridInterpolator((xar, yar), zar)                
-        self.tables = {}
-
-    def add(self, key, filename, dim, lenF):
-
-        if dim == 2:
-
-            #dir_path = os.getcwd()
-            dir_path = os.path.dirname(os.path.realpath(__file__))
-            fpath = os.path.join(dir_path, 'tables', filename)
-            data = np.loadtxt(fpath)
-            m1_ar = data[:,0]
-            m2_ar = data[:,1]
-            m1 = np.array(sorted(list(set(m1_ar))))
-            m2 = np.array(sorted(list(set(m2_ar))))            
-            F_ar = []
-            for ii in range(lenF): 
-                Fdm = data[:,ii+2]
-                Far = Fdm.reshape(len(m1), len(m2))
-                F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
-            self.tables[key] = F_ar
-
-
-def get_xsec(params, mode, indices, table):
-    i1, i2 = indices
-    if mode == 'CCsame':
-        mQ = params['mQ']
-        m1 = params['mCha'][i1]        
-    if mode == 'NNsame':
-        mQ = params['mQ']
-        m1 = params['mNeu'][i1]        
-
-    vec = get_vec(mode, params, i1, i2)
-
-    Fs = []
-    for tab in table: Fs.append( tab([m1, mQ]) )  
-    Fs = np.array(Fs)
-    xsec = np.dot(vec, Fs)[0]
-    return xsec
 
 
 
@@ -244,10 +325,10 @@ def get_xsec(params, mode, indices, table):
 
 #     mQ = params['mQ']
 #     if 'CC' in mode: 
-#         m1_raw = params['mCha'][ii]
+#         m1_raw = params['mC'][ii]
 #         prod = 'C'
 #     if 'NN' in mode: 
-#         m1_raw = params['mNeu'][ii]
+#         m1_raw = params['mN'][ii]
 #         prod = 'N'
 
 #     m1 = abs(m1_raw)        
@@ -291,10 +372,10 @@ def get_xsec(params, mode, indices, table):
 
 #     mQ = params['mQ']
 #     if 'CC' in mode: 
-#         m1_raw = params['mCha'][ii]
+#         m1_raw = params['mC'][ii]
 #         prod = 'C'
 #     if 'NN' in mode: 
-#         m1_raw = params['mNeu'][ii]
+#         m1_raw = params['mN'][ii]
 #         prod = 'N'
 
 #     m1 = abs(m1_raw)        
@@ -335,8 +416,8 @@ def get_xsec(params, mode, indices, table):
 #     i1, i2 = min(indices), max(indices)
 
 #     mQ = params['mQ']
-#     mL_raw = params['mNeu'][i1]
-#     mH_raw = params['mNeu'][i2]
+#     mL_raw = params['mN'][i1]
+#     mH_raw = params['mN'][i2]
 
 #     mH, mL = mH_raw, mL_raw
 #     if mH_raw < 0 and mL_raw < 0: mH, mL = abs(mH_raw), abs(mL_raw)
