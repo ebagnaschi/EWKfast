@@ -19,11 +19,15 @@ class Get_Tables:
         #self.xslim_interp = RegularGridInterpolator((xar, yar), zar)                
         self.tables = {}
 
-    def add(self, key, filename, dim, lenF):
+    def add(self, key, filename):
+
+        gridname = key[2]
+        if 'same' in gridname:
+            dim = 2
+        else:
+            dim = 3
 
         if dim == 2:
-
-            #dir_path = os.getcwd()
             dir_path = os.path.dirname(os.path.realpath(__file__))
             fpath = os.path.join(dir_path, 'tables', filename)
             data = np.loadtxt(fpath)
@@ -32,17 +36,64 @@ class Get_Tables:
             m1 = np.array(sorted(list(set(m1_ar))))
             m2 = np.array(sorted(list(set(m2_ar))))            
             F_ar = []
-            for ii in xrange(lenF): 
-                Fdm = data[:,ii+2]
+            sizeF = np.shape(data)[1] - dim - 1            
+            for ii in xrange(sizeF): 
+                Fdm = data[:,ii+dim]
                 Far = Fdm.reshape(len(m1), len(m2))
                 F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
             self.tables[key] = F_ar
 
+        if dim == 3:
+            dir_path = os.path.dirname(os.path.realpath(__file__))
+            fpath = os.path.join(dir_path, 'tables', filename)
+            data = np.loadtxt(fpath)
+            m1_ar = data[:,0]
+            m2_ar = data[:,1]
+            m3_ar = data[:,2]            
+            m1 = np.array(sorted(list(set(m1_ar))))
+            m2 = np.array(sorted(list(set(m2_ar))))            
+            m3 = np.array(sorted(list(set(m3_ar))))                        
+            F_ar = []
+            sizeF = np.shape(data)[1] - dim - 1            
+            # print filename
+            # print len(m1), len(m2), len(m3), np.shape(data[:,1+dim])
+            for ii in xrange(sizeF): 
+                Fdm = data[:,ii+dim]
+                Far = Fdm.reshape(len(m1), len(m2), len(m3))
+                F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
+            self.tables[key] = F_ar
+
+
+def load_tables(input_list, options):
+
+    if options['scale_var'] in ['ON', 'On', 'on']:
+        scales = ['mu1', 'mu2', 'mu05']
+    else:
+        scales = ['mu1']
+
+    Tabs = Get_Tables()
+
+    for data in input_list: 
+        rs, order, grid, = data['rs'], data['order'], data['grid']        
+        for sc in scales:
+            key=(order, rs, grid, sc)
+            if key not in Tabs.tables.keys(): 
+                #print data['mode'], data['grid']
+                filename='LO-13_{grid}_{sc}.table'.format(grid=grid, sc=sc)            
+                Tabs.add(key, filename)
+    return Tabs
+
 
 def process_input(input_path):
     input_list = []
+    options = {'scale_var': ''}
     for line in open(input_path):
-        elems = line.split('#')[0].split()
+        line0 = line.split('#')[0]
+        ops = line0.split(':')
+        if len(ops) > 1:
+            if ops[0] == 'scale variation': options['scale_var'] = ops[1].strip()
+            continue
+        elems = line.split('#')[0].split()            
         if len(elems) != 3: continue
         data = OrderedDict()
         rs, order, mode = elems
@@ -54,43 +105,75 @@ def process_input(input_path):
         indices = indices - np.array([1, 1])         
         data['indices'] = indices
         data['grid'] = 'empty'
-        if len(mode.split('N')) == 3:
+        if mode.count('N') == 2:
             if mode in ['N1N1', 'N2N2', 'N3N3', 'N4N4']: 
                 data['grid'] = 'NNsame'
             else: 
                 data['grid'] = 'NN'
-        if len(mode.split('C')) == 3:
-            if mode in ['C1C1', 'C2C2']: 
-                data['grid'] = 'CCsame'
-            else: 
-                data['grid'] = 'CC'
+        if mode in ['C1C1', 'C2C2']: 
+            data['grid'] = 'CCsame'
+        if mode == 'C1+C2-': data['grid'] = 'C2-C1+' 
+        if mode == 'C1-C2+': data['grid'] = 'C2+C1-' 
+        if (mode.count('N'), mode.count('C'), mode.count('+')) == (1,1,1): data['grid'] = 'NC+'
+        if (mode.count('N'), mode.count('C'), mode.count('-')) == (1,1,1): data['grid'] = 'NC-'
         if data['grid'] == 'empty':
             print 'grid is empty'
             print mode, data['grid']
         input_list.append( data )
-    return input_list
+    return input_list, options
 
 
+def get_xsec(params, data, options, table_dic):
 
-def get_xsec(params, mode, indices, table):
+    rs, order, grid, indices = data['rs'], data['order'], data['grid'], data['indices']
+
+    if options['scale_var'] in ['ON', 'On', 'on']:
+        scales = ['mu1', 'mu2', 'mu05']
+    else:
+        scales = ['mu1']
+
+    m1, m2 = 0, 0
+
     i1, i2 = indices
-    if mode == 'CCsame':
-        mQ = params['mQL']
+    mQ = params['mQL']    
+    if grid == 'CCsame':
         m1 = abs(params['mC'][i1])
-    if mode == 'NNsame':
-        mQ = params['mQL']
+    if grid == 'NNsame':
         m1 = abs(params['mN'][i1])
+    if grid in ['C2-C1+', 'C2+C1-']:
+        m1 = abs(params['mC'][i1])
+        m2 = abs(params['mC'][i2])
+        m1, m2 = max(m1, m2), min(m1, m2)
+    if grid in ['NN']:
+        m1 = params['mN'][i1]
+        m2 = params['mN'][i2]
+        sgn = np.sign(m1*m2)
+        m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
+    if grid in ['NC+', 'NC-']:
+        m1 = params['mN'][i1]
+        m2 = params['mC'][i2]
+        m2 = np.sign(m1)*m2
+        m1 = abs(m1)
 
     warn = ''
     if m1 == 1500 - 1: warn = '# mass is shifted in the grid'
+    if m2 == 1500 - 1: warn = '# mass is shifted in the grid'
 
-    vec = get_vec(mode, params, i1, i2)
+    vec = get_vec(grid, params, i1, i2)
 
-    Fs = []
-    for tab in table: Fs.append( tab([m1, mQ]) )  
-    Fs = np.array(Fs)
-    xsec = np.dot(vec, Fs)[0]
-    return xsec, warn
+    xsecs = OrderedDict()
+    for sc in scales:
+        key=(order, rs, grid, sc)
+        table = table_dic[key]
+        Fs = []
+        if grid in ['CCsame', 'NNsame']:
+            for tab in table: Fs.append( tab([m1, mQ]) )  
+        else:
+            for tab in table: Fs.append( tab([m1, m2, mQ]) )  
+
+        Fs = np.array(Fs)
+        xsecs[sc] = np.dot(vec, Fs)[0]
+    return xsecs, warn
 
 def get_params(SLHAfile):
 
@@ -163,7 +246,7 @@ def ranges(params):
     for i in [0, 1]:
         val = params[p][i]
         if abs(val) >= bound:
-            memo = '{p}{i} = {val} is out of range. |{p}| = {bound} was used.'.format(p=p,val=params[p], bound=bound, i=i+1)
+            memo = '{p}{i} = {val} is out of range. |{p}{i}| = {bound} was used.'.format(p=p,val=params[p][i], bound=bound, i=i+1)
             range_memo.append(memo)        
             params[p][i] = bound - 1
 
@@ -172,7 +255,7 @@ def ranges(params):
     for i in [0, 1, 2, 3]:
         val = params[p][i]
         if abs(val) >= bound:
-            memo = '{p}{i} = {val} is out of range. |{p}| = {bound} was used.'.format(p=p,val=params[p], bound=bound, i=i+1)
+            memo = '{p}{i} = {val} is out of range. |{p}{i}| = {bound} was used.'.format(p=p,val=params[p][i], bound=bound, i=i+1)
             range_memo.append(memo)        
             params[p][i] = bound - 1
 
@@ -265,6 +348,10 @@ def get_vec(run_mode, params, i1, i2):
     if run_mode in ['NN', 'NNsame']:
         gnn = gNN(i1, i2, N)
         vec = [ cNN(gnn, i) for i in xrange(5) ]
+
+    if run_mode in ['NC+', 'NC-']:
+        gnc = gNC(i1, i2, N, V, U)
+        vec = [ cNC(gnc, i) for i in xrange(6) ]
 
     return vec
 

@@ -1,5 +1,8 @@
+scale variation: ON
+
 13 LO C1C1  
-# 13 LO C1C2  
+13 LO C1+C2-  
+13 LO C1-C2+  
 13 LO C2C2
 
 13 LO N1N1  
