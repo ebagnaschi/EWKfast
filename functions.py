@@ -19,7 +19,11 @@ class Get_Tables:
         #self.xslim_interp = RegularGridInterpolator((xar, yar), zar)                
         self.tables = {}
 
-    def add(self, key, filename):
+    def add(self, key):
+
+        order, rs, grid, sc = key
+
+        dir_path = os.path.dirname(os.path.realpath(__file__))
 
         gridname = key[2]
         if 'same' in gridname:
@@ -27,41 +31,82 @@ class Get_Tables:
         else:
             dim = 3
 
-        if dim == 2:
-            dir_path = os.path.dirname(os.path.realpath(__file__))
-            fpath = os.path.join(dir_path, 'tables', filename)
-            data = np.loadtxt(fpath)
-            m1_ar = data[:,0]
-            m2_ar = data[:,1]
-            m1 = np.array(sorted(list(set(m1_ar))))
-            m2 = np.array(sorted(list(set(m2_ar))))            
-            F_ar = []
-            sizeF = np.shape(data)[1] - dim - 1            
-            for ii in xrange(sizeF): 
-                Fdm = data[:,ii+dim]
-                Far = Fdm.reshape(len(m1), len(m2))
-                F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
-            self.tables[key] = F_ar
+        nF = {}
+        nF['CCsame'] = 6
+        nF['NNsame'] = 5
+        nF['NN'] = 5
+        nF['NC+'] = 6
+        nF['NC-'] = 6
+        nF['C2+C1-'] = 3
+        nF['C2-C1+'] = 3
 
-        if dim == 3:
-            dir_path = os.path.dirname(os.path.realpath(__file__))
-            fpath = os.path.join(dir_path, 'tables', filename)
-            data = np.loadtxt(fpath)
-            m1_ar = data[:,0]
-            m2_ar = data[:,1]
-            m3_ar = data[:,2]            
-            m1 = np.array(sorted(list(set(m1_ar))))
-            m2 = np.array(sorted(list(set(m2_ar))))            
-            m3 = np.array(sorted(list(set(m3_ar))))                        
-            F_ar = []
-            sizeF = np.shape(data)[1] - dim - 1            
-            # print filename
-            # print len(m1), len(m2), len(m3), np.shape(data[:,1+dim])
-            for ii in xrange(sizeF): 
-                Fdm = data[:,ii+dim]
-                Far = Fdm.reshape(len(m1), len(m2), len(m3))
-                F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
-            self.tables[key] = F_ar
+        flag = 'fast'
+
+        if flag == 'fast':
+
+            basetag = '{order}-{rs}_{grid}'.format(order=order, rs=rs, grid=grid)            
+            tag = '{order}-{rs}_{grid}_{sc}'.format(order=order, rs=rs, grid=grid, sc=sc)            
+            if dim == 2:
+                fpath_mass = os.path.join(dir_path, 'lookups', basetag)
+                fpath = os.path.join(dir_path, 'lookups', tag)                
+                m1 = np.load( fpath_mass + '.m1' )
+                m2 = np.load( fpath_mass + '.m2' )
+                F_ar = []
+                for ii in xrange(nF[grid]): 
+                    i_F = ii+1
+                    Far = np.load( fpath + '.F{i}'.format(i = i_F))
+                    F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
+                self.tables[key] = F_ar
+
+            if dim == 3:
+                fpath_mass = os.path.join(dir_path, 'lookups', basetag)
+                fpath = os.path.join(dir_path, 'lookups', tag)                
+                m1 = np.load( fpath_mass + '.m1' )
+                m2 = np.load( fpath_mass + '.m2' )
+                m3 = np.load( fpath_mass + '.m3' )                
+                F_ar = []
+                for ii in xrange(nF[grid]): 
+                    i_F = ii+1
+                    Far = np.load( fpath + '.F{i}'.format(i = i_F) )
+                    F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
+                self.tables[key] = F_ar
+
+        if flag == 'slow':
+
+            filename='{order}-{rs}_{grid}_{sc}.table'.format(order=order, rs=rs, grid=grid, sc=sc)
+            if dim == 2:
+                fpath = os.path.join(dir_path, 'tables', filename)
+                data = np.loadtxt(fpath)
+                m1_ar = data[:,0]
+                m2_ar = data[:,1]
+                m1 = np.array(sorted(list(set(m1_ar))))
+                m2 = np.array(sorted(list(set(m2_ar))))            
+                F_ar = []
+                sizeF = np.shape(data)[1] - dim - 1            
+                for ii in xrange(sizeF): 
+                    Fdm = data[:,ii+dim]
+                    Far = Fdm.reshape(len(m1), len(m2))
+                    F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
+                self.tables[key] = F_ar
+
+            if dim == 3:
+                fpath = os.path.join(dir_path, 'tables', filename)
+                data = np.loadtxt(fpath)
+                m1_ar = data[:,0]
+                m2_ar = data[:,1]
+                m3_ar = data[:,2]            
+                m1 = np.array(sorted(list(set(m1_ar))))
+                m2 = np.array(sorted(list(set(m2_ar))))            
+                m3 = np.array(sorted(list(set(m3_ar))))                        
+                F_ar = []
+                sizeF = np.shape(data)[1] - dim - 1            
+                # print filename
+                # print len(m1), len(m2), len(m3), np.shape(data[:,1+dim])
+                for ii in xrange(sizeF): 
+                    Fdm = data[:,ii+dim]
+                    Far = Fdm.reshape(len(m1), len(m2), len(m3))
+                    F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
+                self.tables[key] = F_ar
 
 
 def load_tables(input_list, options):
@@ -79,8 +124,7 @@ def load_tables(input_list, options):
             key=(order, rs, grid, sc)
             if key not in Tabs.tables.keys(): 
                 #print data['mode'], data['grid']
-                filename='LO-13_{grid}_{sc}.table'.format(grid=grid, sc=sc)            
-                Tabs.add(key, filename)
+                Tabs.add(key)
     return Tabs
 
 
