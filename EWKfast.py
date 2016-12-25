@@ -37,9 +37,11 @@ if __name__ == "__main__":
     #show_Fs('LO','13','C2+C1-','mu1', [591,  -146,  100], Tabs)    
     #exit()
 
+    method = 'log'
+
     for data in input_list: 
         order, rs, mode, grid, indices = data['order'], data['rs'], data['mode'], data['grid'], data['indices']
-        xsecs, warn = get_xsec(params, data, options, Tabs.tables)
+        xsecs, warn = get_xsec(params, data, options, Tabs, method)
         if options['scale_var'] == 'ON':            
             x1, x2, x05 = str(xsecs['mu1']).ljust(18), str(xsecs['mu2']).ljust(18), str(xsecs['mu05']).ljust(18)
             result = '{rs}  {order}  {mode}   {x1}   {x2}  {x05}'.format(rs=rs, order=order.ljust(3), mode=mode.ljust(7), x1=x1, x2=x2, x05=x05)

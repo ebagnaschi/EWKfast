@@ -18,14 +18,13 @@ def get_line(List):
 class Get_Tables:
 
     def __init__(self):
-
-        #xar = np.load( os.path.join(dirpath, grid_file + '_x') )
-        #yar = np.load( os.path.join(dirpath, grid_file + '_y') )
-        #zar = np.load( os.path.join(dirpath, grid_file + '_z') )
-        #self.xslim_interp = RegularGridInterpolator((xar, yar), zar)                
-        self.tables = {}
+        self.tables_lin = {}
+        self.tables_log = {}        
+        self.shifts = {}
 
     def add(self, key):
+
+        method = 'log'
 
         order, rs, grid, sc = key
 
@@ -48,30 +47,36 @@ class Get_Tables:
 
         basetag = '{order}-{rs}_{grid}'.format(order=order, rs=rs, grid=grid)            
         tag = '{order}-{rs}_{grid}_{sc}'.format(order=order, rs=rs, grid=grid, sc=sc)            
-        if dim == 2:
-            fpath_mass = os.path.join(dir_path, 'lookups', basetag)
-            fpath = os.path.join(dir_path, 'lookups', tag)                
-            m1 = np.load( fpath_mass + '.m1' )
-            m2 = np.load( fpath_mass + '.m2' )
-            F_ar = []
-            for ii in xrange(nF[grid]): 
-                i_F = ii+1
-                Far = np.load( fpath + '.F{i}'.format(i = i_F))
-                F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
-            self.tables[key] = F_ar
 
+        fpath_mass = os.path.join(dir_path, 'lookups', basetag)
+        fpath = os.path.join(dir_path, 'lookups', tag)                
+        m1 = np.load( fpath_mass + '.m1' )
+        m2 = np.load( fpath_mass + '.m2' )
+        if dim == 2:
+            masses = (m1, m2)
         if dim == 3:
-            fpath_mass = os.path.join(dir_path, 'lookups', basetag)
-            fpath = os.path.join(dir_path, 'lookups', tag)                
-            m1 = np.load( fpath_mass + '.m1' )
-            m2 = np.load( fpath_mass + '.m2' )
-            m3 = np.load( fpath_mass + '.m3' )                
-            F_ar = []
-            for ii in xrange(nF[grid]): 
-                i_F = ii+1
-                Far = np.load( fpath + '.F{i}'.format(i = i_F) )
-                F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
-            self.tables[key] = F_ar
+            m3 = np.load( fpath_mass + '.m3' )
+            masses = (m1, m2, m3)
+ 
+        F_lin = []
+        F_log = []            
+        shift_ar = []
+        for ii in xrange(nF[grid]): 
+            i_F = ii+1
+            Far = np.load( fpath + '.F{i}'.format(i = i_F))
+            minimum = np.amin(Far)
+            if minimum > 0:
+                shift = 0
+                Far_shifted = Far                    
+            else:
+                shift = 1.1*abs(minimum)
+                Far_shifted = Far + shift * np.ones( np.shape(Far) )
+            F_lin.append( RegularGridInterpolator( masses, Far) )
+            F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )                
+            shift_ar.append(shift)        
+        self.tables_lin[key] = F_lin
+        self.tables_log[key] = F_log            
+        self.shifts[key] = shift_ar            
 
 
 def load_tables(input_list, options):
@@ -87,7 +92,7 @@ def load_tables(input_list, options):
         rs, order, grid, = data['rs'], data['order'], data['grid']        
         for sc in scales:
             key=(order, rs, grid, sc)
-            if key not in Tabs.tables.keys(): 
+            if key not in Tabs.tables_lin.keys(): 
                 #print data['mode'], data['grid']
                 Tabs.add(key)
     return Tabs
@@ -141,7 +146,7 @@ def process_input(input_path):
     return input_list, options
 
 
-def get_xsec(params, data, options, table_dic):
+def get_xsec(params, data, options, Tabs, method = 'log'):
 
     rs, order, grid, indices = data['rs'], data['order'], data['grid'], data['indices']
 
@@ -156,23 +161,27 @@ def get_xsec(params, data, options, table_dic):
     mQ = params['mQL']    
     if grid == 'CCsame':
         m1 = abs(params['mC'][i1])
+        masses = [(m1, mQ)]
     if grid == 'NNsame':
         m1 = abs(params['mN'][i1])
+        masses = [(m1, mQ)]        
     if grid in ['C2-C1+', 'C2+C1-']:
         m1 = abs(params['mC'][i1])
         m2 = abs(params['mC'][i2])
         m1, m2 = max(m1, m2), min(m1, m2)
+        masses = [(m1, m2, mQ)]        
     if grid in ['NN']:
         m1 = params['mN'][i1]
         m2 = params['mN'][i2]
         sgn = np.sign(m1*m2)
         m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
+        masses = [(m1, m2, mQ)]                
     if grid in ['NC+', 'NC-']:
         m2 = params['mC'][i2]
         m1 = params['mN'][i1] 
         m2 = np.sign(m1*m2)*m2
         m1 = abs(m1)
-        print 'here', m1, m2
+        masses = [(m1, m2, mQ)]        
 
     warn = ''
     if m1 == 1500 - 1: warn = '# mass is shifted in the grid'
@@ -180,15 +189,23 @@ def get_xsec(params, data, options, table_dic):
 
     vec = get_vec(grid, params, i1, i2)
 
-    xsecs = OrderedDict()
+    xsecs = OrderedDict()    
     for sc in scales:
         key=(order, rs, grid, sc)
-        table = table_dic[key]
         Fs = []
-        if grid in ['CCsame', 'NNsame']:
-            for tab in table: Fs.append( tab([m1, mQ])[0] )  
-        else:
-            for tab in table: Fs.append( tab([m1, m2, mQ])[0] )  
+        if method == 'linear':
+            table = Tabs.tables_lin[key]
+            for tab in table:
+                Fs.append( tab(masses)[0] )                      
+        if method == 'log':
+            table = Tabs.tables_log[key]
+            shift = Tabs.shifts[key]        
+            Fs = []
+            for i in xrange(len(table)):
+                tab = table[i]
+                s = shift[i]
+                F = exp(tab(masses)[0]) - s
+                Fs.append( F )  
 
         Fs = np.array(Fs)
         xsecs[sc] = np.dot(vec, Fs)
@@ -376,173 +393,3 @@ def get_vec(run_mode, params, i1, i2):
 
 #####################################################
 
-
-
-
-
-
-# def get_coeffs_2D(run_mode, masses, tableFile):
-
-#     data = np.loadtxt(tableFile)
-#     m1_ar = data[:,0]
-#     m2_ar = data[:,1]
-#     F_ar = []
-#     for ii in range(10): 
-#         F_ar.append( data[:,ii+2] )
-
-#     coeff_seeds = []
-#     for ii in range(10):      
-#         tmp_list = []      
-#         for j in range(len(list(m1_ar))):
-#             m1 = m1_ar[j]
-#             m2 = m2_ar[j]
-#             val = F_ar[ii][j]    
-#             tmp_list.append( [m1, m2, val ] )
-#         coeff_seeds.append(tmp_list) 
-
-#     m1_in = masses[0]
-#     m2_in = masses[1]
-
-#     Coeffs = []
-#     for ii in range(10):
-#         v_interp = Interpolate2D(coeff_seeds[ii], [m1_in, m2_in])
-#         Coeffs.append(v_interp)
-
-#     return np.array(Coeffs)
-
-
-
-# def get_xsec(params, mode, indices, nlo_flag):
-#     if indices[0] == indices[1]: 
-#         return get_same(params, mode, indices, nlo_flag)
-#     else:
-#         if 'NN' in mode: return get_NN(params, mode, indices, nlo_flag)
-
-
-
-# def get_same(params, mode, indices, nlo_flag):
-
-#     mode = mode + 'same'
-
-#     tableDir = './'
-#     table_mid = tableDir + '{order}-{E}_{mode}.table'.format(order=nlo_flag, E=rootS, mode=mode)
-
-#     ii = indices[0]
-
-#     mQ = params['mQ']
-#     if 'CC' in mode: 
-#         m1_raw = params['mC'][ii]
-#         prod = 'C'
-#     if 'NN' in mode: 
-#         m1_raw = params['mN'][ii]
-#         prod = 'N'
-
-#     m1 = abs(m1_raw)        
-#     if m1 > 1000.: 
-#         print prod + '{ii} is too heavy (|{mass}| >1TeV): skip'.format(ii=str(ii+1), mass=str(m1_raw))
-#         return 
-#     #Coeff05 = get_coeffs_2D(mode,[m1, mQ], table05)
-#     Coeff10 = get_coeffs_2D(mode,[m1, mQ], table10)
-#     #Coeff20 = get_coeffs_2D(mode,[m1, mQ], table20)
-
-#     Mline = get_Mline(mode, params, ii, ii)
-#     xsec05 = np.dot(Mline, Coeff05)
-#     xsec10 = np.dot(Mline, Coeff10)
-#     xsec20 = np.dot(Mline, Coeff20)
-
-#     if mode == 'CCsame': print 'C{ii}-C{ii} (m{prod}{ii}, mQ) = ({mX}, {mQ}) {nlo_flag} [pb]'.format(ii=str(ii+1), prod=prod, mX=m1_raw, mQ=mQ, nlo_flag=nlo_flag)
-#     if mode == 'NNsame': print 'N{ii}-N{ii} (m{prod}{ii}, mQ) = ({mX}, {mQ}) {nlo_flag} [pb]'.format(ii=str(ii+1), prod=prod, mX=m1_raw, mQ=mQ, nlo_flag=nlo_flag)
-
-#     print 'scale 0.5:  ', xsec05
-#     print 'scale 1.0:  ', xsec10
-#     print 'scale 2.0:  ', xsec20
-
-
-
-# def get_same_old(params, mode, indices, nlo_flag):
-
-#     mode = mode + 'same'
-
-#     if nlo_flag == 'NLO': 
-#         tableDir = 'NLO_tables/'
-#         table05 = tableDir + 'table_' + mode + '_8_NLO_05.dat'
-#         table10 = tableDir + 'table_' + mode + '_8_NLO_10.dat'
-#         table20 = tableDir + 'table_' + mode + '_8_NLO_20.dat'
-#     if nlo_flag == 'LO': 
-#         tableDir = 'table_1/'
-#         table05 = tableDir + 'table_' + mode + '_8_LO_05.dat'
-#         table10 = tableDir + 'table_' + mode + '_8_LO_10.dat'
-#         table20 = tableDir + 'table_' + mode + '_8_LO_20.dat'
-
-#     ii = indices[0]
-
-#     mQ = params['mQ']
-#     if 'CC' in mode: 
-#         m1_raw = params['mC'][ii]
-#         prod = 'C'
-#     if 'NN' in mode: 
-#         m1_raw = params['mN'][ii]
-#         prod = 'N'
-
-#     m1 = abs(m1_raw)        
-#     if m1 > 1000.: 
-#         print prod + '{ii} is too heavy (|{mass}| >1TeV): skip'.format(ii=str(ii+1), mass=str(m1_raw))
-#         return 
-#     Coeff05 = get_coeffs_2D(mode,[m1, mQ], table05)
-#     Coeff10 = get_coeffs_2D(mode,[m1, mQ], table10)
-#     Coeff20 = get_coeffs_2D(mode,[m1, mQ], table20)
-
-#     Mline = get_Mline(mode, params, ii, ii)
-#     xsec05 = np.dot(Mline, Coeff05)
-#     xsec10 = np.dot(Mline, Coeff10)
-#     xsec20 = np.dot(Mline, Coeff20)
-
-#     if mode == 'CCsame': print 'C{ii}-C{ii} (m{prod}{ii}, mQ) = ({mX}, {mQ}) {nlo_flag} [pb]'.format(ii=str(ii+1), prod=prod, mX=m1_raw, mQ=mQ, nlo_flag=nlo_flag)
-#     if mode == 'NNsame': print 'N{ii}-N{ii} (m{prod}{ii}, mQ) = ({mX}, {mQ}) {nlo_flag} [pb]'.format(ii=str(ii+1), prod=prod, mX=m1_raw, mQ=mQ, nlo_flag=nlo_flag)
-
-#     print 'scale 0.5:  ', xsec05
-#     print 'scale 1.0:  ', xsec10
-#     print 'scale 2.0:  ', xsec20
-
-
-
-# def get_NN(params, mode, indices, nlo_flag):
-
-#     if nlo_flag == 'NLO': 
-#         tableDir = 'NLO_tables/'
-#         table05 = tableDir + 'table_' + mode + '_8_NLO_05.dat'
-#         table10 = tableDir + 'table_' + mode + '_8_NLO_10.dat'
-#         table20 = tableDir + 'table_' + mode + '_8_NLO_20.dat'
-#     if nlo_flag == 'LO': 
-#         tableDir = 'table_1/'
-#         table05 = tableDir + 'table_' + mode + '_8_LO_05.dat'
-#         table10 = tableDir + 'table_' + mode + '_8_LO_10.dat'
-#         table20 = tableDir + 'table_' + mode + '_8_LO_20.dat'
-
-#     i1, i2 = min(indices), max(indices)
-
-#     mQ = params['mQ']
-#     mL_raw = params['mN'][i1]
-#     mH_raw = params['mN'][i2]
-
-#     mH, mL = mH_raw, mL_raw
-#     if mH_raw < 0 and mL_raw < 0: mH, mL = abs(mH_raw), abs(mL_raw)
-#     if mH_raw < 0 and mL_raw > 0: mH, mL = abs(mH_raw), - mL_raw
-    
-#     if abs(mH) > 1500.: 
-#         print prod + '{i2} is too heavy (|{mass}| >1.5TeV): skip'.format(i2=str(i2+1), mass=str(mH_raw))
-#         return 
-#     Coeff05 = get_coeffs_3D(mode, [mH, mL, mQ], table05)
-#     Coeff10 = get_coeffs_3D(mode, [mH, mL, mQ], table10)
-#     Coeff20 = get_coeffs_3D(mode, [mH, mL, mQ], table20)
-
-#     Mline = get_Mline(mode, params, i1, i2)
-#     xsec05 = np.dot(Mline, Coeff05)
-#     xsec10 = np.dot(Mline, Coeff10)
-#     xsec20 = np.dot(Mline, Coeff20)
-
-#     print 'N{i1}-N{i2} (mN{i1}, mN{i2}, mQ) = ({m1}, {m2}, {mQ}) {nlo_flag} [pb]'.format(i1=i1+1, i2=i2+1, m1=mL_raw, m2=mH_raw, mQ=mQ, nlo_flag=nlo_flag)
-
-#     print 'scale 0.5:  ', xsec05
-#     print 'scale 1.0:  ', xsec10
-#     print 'scale 2.0:  ', xsec20
