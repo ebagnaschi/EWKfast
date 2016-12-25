@@ -9,6 +9,12 @@ from scipy.interpolate import interp1d, interp2d, RegularGridInterpolator
 from collections import OrderedDict
 from re import findall 
 
+def get_line(List):
+    line = str(List[0])
+    for i in range(1, len(List)):
+        line += '  ' + str(List[i])
+    return line
+
 class Get_Tables:
 
     def __init__(self):
@@ -40,73 +46,32 @@ class Get_Tables:
         nF['C2+C1-'] = 3
         nF['C2-C1+'] = 3
 
-        flag = 'fast'
+        basetag = '{order}-{rs}_{grid}'.format(order=order, rs=rs, grid=grid)            
+        tag = '{order}-{rs}_{grid}_{sc}'.format(order=order, rs=rs, grid=grid, sc=sc)            
+        if dim == 2:
+            fpath_mass = os.path.join(dir_path, 'lookups', basetag)
+            fpath = os.path.join(dir_path, 'lookups', tag)                
+            m1 = np.load( fpath_mass + '.m1' )
+            m2 = np.load( fpath_mass + '.m2' )
+            F_ar = []
+            for ii in xrange(nF[grid]): 
+                i_F = ii+1
+                Far = np.load( fpath + '.F{i}'.format(i = i_F))
+                F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
+            self.tables[key] = F_ar
 
-        if flag == 'fast':
-
-            basetag = '{order}-{rs}_{grid}'.format(order=order, rs=rs, grid=grid)            
-            tag = '{order}-{rs}_{grid}_{sc}'.format(order=order, rs=rs, grid=grid, sc=sc)            
-            if dim == 2:
-                fpath_mass = os.path.join(dir_path, 'lookups', basetag)
-                fpath = os.path.join(dir_path, 'lookups', tag)                
-                m1 = np.load( fpath_mass + '.m1' )
-                m2 = np.load( fpath_mass + '.m2' )
-                F_ar = []
-                for ii in xrange(nF[grid]): 
-                    i_F = ii+1
-                    Far = np.load( fpath + '.F{i}'.format(i = i_F))
-                    F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
-                self.tables[key] = F_ar
-
-            if dim == 3:
-                fpath_mass = os.path.join(dir_path, 'lookups', basetag)
-                fpath = os.path.join(dir_path, 'lookups', tag)                
-                m1 = np.load( fpath_mass + '.m1' )
-                m2 = np.load( fpath_mass + '.m2' )
-                m3 = np.load( fpath_mass + '.m3' )                
-                F_ar = []
-                for ii in xrange(nF[grid]): 
-                    i_F = ii+1
-                    Far = np.load( fpath + '.F{i}'.format(i = i_F) )
-                    F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
-                self.tables[key] = F_ar
-
-        if flag == 'slow':
-
-            filename='{order}-{rs}_{grid}_{sc}.table'.format(order=order, rs=rs, grid=grid, sc=sc)
-            if dim == 2:
-                fpath = os.path.join(dir_path, 'tables', filename)
-                data = np.loadtxt(fpath)
-                m1_ar = data[:,0]
-                m2_ar = data[:,1]
-                m1 = np.array(sorted(list(set(m1_ar))))
-                m2 = np.array(sorted(list(set(m2_ar))))            
-                F_ar = []
-                sizeF = np.shape(data)[1] - dim - 1            
-                for ii in xrange(sizeF): 
-                    Fdm = data[:,ii+dim]
-                    Far = Fdm.reshape(len(m1), len(m2))
-                    F_ar.append( RegularGridInterpolator( (m1, m2), Far) )
-                self.tables[key] = F_ar
-
-            if dim == 3:
-                fpath = os.path.join(dir_path, 'tables', filename)
-                data = np.loadtxt(fpath)
-                m1_ar = data[:,0]
-                m2_ar = data[:,1]
-                m3_ar = data[:,2]            
-                m1 = np.array(sorted(list(set(m1_ar))))
-                m2 = np.array(sorted(list(set(m2_ar))))            
-                m3 = np.array(sorted(list(set(m3_ar))))                        
-                F_ar = []
-                sizeF = np.shape(data)[1] - dim - 1            
-                # print filename
-                # print len(m1), len(m2), len(m3), np.shape(data[:,1+dim])
-                for ii in xrange(sizeF): 
-                    Fdm = data[:,ii+dim]
-                    Far = Fdm.reshape(len(m1), len(m2), len(m3))
-                    F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
-                self.tables[key] = F_ar
+        if dim == 3:
+            fpath_mass = os.path.join(dir_path, 'lookups', basetag)
+            fpath = os.path.join(dir_path, 'lookups', tag)                
+            m1 = np.load( fpath_mass + '.m1' )
+            m2 = np.load( fpath_mass + '.m2' )
+            m3 = np.load( fpath_mass + '.m3' )                
+            F_ar = []
+            for ii in xrange(nF[grid]): 
+                i_F = ii+1
+                Far = np.load( fpath + '.F{i}'.format(i = i_F) )
+                F_ar.append( RegularGridInterpolator( (m1, m2, m3), Far) )
+            self.tables[key] = F_ar
 
 
 def load_tables(input_list, options):
@@ -126,6 +91,14 @@ def load_tables(input_list, options):
                 #print data['mode'], data['grid']
                 Tabs.add(key)
     return Tabs
+
+
+def show_Fs(order,rs,grid,scale, masses, Tabs):
+    table = Tabs.tables[(order,rs,grid,scale)]
+    Fs = []
+    for tab in table: Fs.append( tab(masses)[0] )  
+    line = get_line(Fs)
+    print grid, masses, line
 
 
 def process_input(input_path):
@@ -162,7 +135,8 @@ def process_input(input_path):
         if (mode.count('N'), mode.count('C'), mode.count('-')) == (1,1,1): data['grid'] = 'NC-'
         if data['grid'] == 'empty':
             print 'grid is empty'
-            print mode, data['grid']
+            print mode, 'is not defined'
+            exit()
         input_list.append( data )
     return input_list, options
 
@@ -194,10 +168,11 @@ def get_xsec(params, data, options, table_dic):
         sgn = np.sign(m1*m2)
         m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
     if grid in ['NC+', 'NC-']:
-        m1 = params['mN'][i1]
         m2 = params['mC'][i2]
-        m2 = np.sign(m1)*m2
+        m1 = params['mN'][i1] 
+        m2 = np.sign(m1*m2)*m2
         m1 = abs(m1)
+        print 'here', m1, m2
 
     warn = ''
     if m1 == 1500 - 1: warn = '# mass is shifted in the grid'
@@ -211,12 +186,12 @@ def get_xsec(params, data, options, table_dic):
         table = table_dic[key]
         Fs = []
         if grid in ['CCsame', 'NNsame']:
-            for tab in table: Fs.append( tab([m1, mQ]) )  
+            for tab in table: Fs.append( tab([m1, mQ])[0] )  
         else:
-            for tab in table: Fs.append( tab([m1, m2, mQ]) )  
+            for tab in table: Fs.append( tab([m1, m2, mQ])[0] )  
 
         Fs = np.array(Fs)
-        xsecs[sc] = np.dot(vec, Fs)[0]
+        xsecs[sc] = np.dot(vec, Fs)
     return xsecs, warn
 
 def get_params(SLHAfile):

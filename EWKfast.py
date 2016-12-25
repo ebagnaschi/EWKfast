@@ -33,8 +33,12 @@ if __name__ == "__main__":
 
     Tabs = load_tables(input_list, options) 
 
+    #show_Fs('LO','13','NC+','mu1', [0,591,391], Tabs)
+    #show_Fs('LO','13','C2+C1-','mu1', [591,  -146,  100], Tabs)    
+    #exit()
+
     for data in input_list: 
-        rs, order, mode, grid, indices = data['rs'], data['order'], data['mode'], data['grid'], data['indices']
+        order, rs, mode, grid, indices = data['order'], data['rs'], data['mode'], data['grid'], data['indices']
         xsecs, warn = get_xsec(params, data, options, Tabs.tables)
         if options['scale_var'] == 'ON':            
             x1, x2, x05 = str(xsecs['mu1']).ljust(18), str(xsecs['mu2']).ljust(18), str(xsecs['mu05']).ljust(18)
