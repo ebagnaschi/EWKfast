@@ -10,12 +10,6 @@ from scipy.interpolate import interp1d, interp2d, RegularGridInterpolator
 
 if __name__ == "__main__":
 
-    #Tabs = Get_Tables()
-    # Tabs.add( key=('LO','13','CCsame'), filename='LO-13_CCsame.table', dim=2, lenF=6 )
-    # Tabs.add( key=('LO','13','NNsame'), filename='LO-13_NNsame.table', dim=2, lenF=5 )
-    # Tabs.add( key=('NLO','13','CCsame'), filename='NLO-13_CCsame.table', dim=2, lenF=6 )
-    # Tabs.add( key=('NLO','13','NNsame'), filename='NLO-13_NNsame.table', dim=2, lenF=5 )
-
     try:
         input_file = sys.argv[1] 
         slha_file = sys.argv[2]

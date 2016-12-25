@@ -110,6 +110,7 @@ def process_input(input_path):
     input_list = []
     options = {'scale_var': ''}
     for line in open(input_path):
+        if 'ignore below' in line: break
         line0 = line.split('#')[0]
         ops = line0.split(':')
         if len(ops) > 1:
