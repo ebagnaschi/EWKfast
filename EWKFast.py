@@ -62,6 +62,8 @@ if __name__ == "__main__":
         out_string += result +' '+ warn + '\n'
     out_string += '\n'
 
+    out_string += 'SLHA file: ' + slha_path + '\n'
+    out_string += 'Input file: ' + input_path + '\n'    
     for key, item in options.items():
         if item != '':
             out_string += '{key}: {item} \n'.format(key=key, item=item)
