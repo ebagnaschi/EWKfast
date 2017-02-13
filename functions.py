@@ -81,7 +81,7 @@ class Get_Tables:
 
 def load_tables(input_list, options):
 
-    if options['scale_var'] in ['ON', 'On', 'on']:
+    if options['ScaleVariation'] in ['ON', 'On', 'on']:
         scales = ['mu1', 'mu2', 'mu05']
     else:
         scales = ['mu1']
@@ -108,13 +108,14 @@ def show_Fs(order,rs,grid,scale, masses, Tabs):
 
 def process_input(input_path):
     input_list = []
-    options = {'scale_var': ''}
+    options = OrderedDict([('ScaleVariation', ''), ('Sort', ''), ('Cut', -1), ('Unit', 'pb')])
     for line in open(input_path):
         if 'ignore below' in line: break
         line0 = line.split('#')[0]
         ops = line0.split(':')
         if len(ops) > 1:
-            if ops[0] == 'scale variation': options['scale_var'] = ops[1].strip()
+            key, var = ops[0].strip(), ops[1].strip()
+            options[key] = var 
             continue
         elems = line.split('#')[0].split()            
         if len(elems) != 3: continue
@@ -151,10 +152,15 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
 
     rs, order, grid, indices = data['rs'], data['order'], data['grid'], data['indices']
 
-    if options['scale_var'] in ['ON', 'On', 'on']:
+    if options['ScaleVariation'] in ['ON', 'On', 'on']:
         scales = ['mu1', 'mu2', 'mu05']
     else:
         scales = ['mu1']
+
+    if options['Unit'] in ['fb']:
+        unit = 1000.
+    else:
+        unit = 1.
 
     m1, m2 = 0, 0
 
@@ -180,8 +186,9 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
     if grid in ['NC+', 'NC-']:
         m2 = params['mC'][i2]
         m1 = params['mN'][i1] 
-        m2 = np.sign(m1*m2)*m2
-        m1 = abs(m1)
+        if order == 'LO':
+            m2 = np.sign(m1*m2)*m2
+            m1 = abs(m1)
         masses = [(m1, m2, mQ)]        
 
     warn = ''
@@ -209,8 +216,32 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
                 Fs.append( F )  
 
         Fs = np.array(Fs)
-        xsecs[sc] = np.dot(vec, Fs)
-    return xsecs, warn
+        xsecs[sc] = np.dot(vec, Fs) * unit
+    result = {}
+    result['xsecs'] = xsecs
+    result['warn']  = warn    
+    return result
+
+
+def get_results(input_list, params, options, Tabs, method):
+    try:
+        thres = float(options['Cut'])
+    except:
+        thres = -1
+
+    results = OrderedDict()
+    for data in input_list: 
+        order, rs, mode, grid, indices = data['order'], data['rs'], data['mode'], data['grid'], data['indices']
+        res = get_xsec(params, data, options, Tabs, method)
+        if res['xsecs']['mu1'] > thres: 
+            results[(order, rs, mode)] = res
+    return results
+
+def sort_results(results):
+    sorted_results = OrderedDict()
+    for key, data in sorted(results.items(), key=lambda x:x[1]['xsecs']['mu1'], reverse=True):
+        sorted_results[key] = data
+    return sorted_results
 
 def get_params(SLHAfile):
 

@@ -1,12 +1,45 @@
 ScaleVariation: ON
-Unit: pb   # fb or pb
-Sort: ON
+Unit: pb  # fb or pb
+Sort: ON  # sort by XS
 # Cut: 0.01  # show only XS larger than the cut 
 
 13 NLO C1C1  
 13 NLO C1+C2-  
 13 NLO C1-C2+  
 13 NLO C2C2
+
+13 NLO N1N1  
+13 NLO N1N2  
+13 NLO N1N3  
+13 NLO N1N4  
+13 NLO N2N2  
+13 NLO N2N3  
+13 NLO N2N4  
+13 NLO N3N3  
+13 NLO N3N4  
+13 NLO N4N4  
+
+13 NLO N1C1+
+13 NLO N2C1+
+13 NLO N3C1+
+13 NLO N4C1+
+13 NLO N1C1-
+13 NLO N2C1-
+13 NLO N3C1-
+13 NLO N4C1-
+
+13 NLO N1C2+
+13 NLO N2C2+
+13 NLO N3C2+
+13 NLO N4C2+
+13 NLO N1C2-
+13 NLO N2C2-
+13 NLO N3C2-
+13 NLO N4C2-
+
+
+
+
 
 
 ####### ignore below #######
