@@ -72,7 +72,10 @@ class Get_Tables:
                 shift = 1.1*abs(minimum)
                 Far_shifted = Far + shift * np.ones( np.shape(Far) )
             F_lin.append( RegularGridInterpolator( masses, Far) )
-            F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )                
+            F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )
+            if grid in ['NN', 'NNsame'] and i_F in [3, 5]:
+                F_lin.append( RegularGridInterpolator( masses, Far) )
+                F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )                            
             shift_ar.append(shift)        
         self.tables_lin[key] = F_lin
         self.tables_log[key] = F_log            
@@ -165,24 +168,28 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
     m1, m2 = 0, 0
 
     i1, i2 = indices
-    mQ = params['mQL']    
+    mQ, muR, mdR = params['mqL'], params['muR'], params['mdR']    
     if grid == 'CCsame':
         m1 = abs(params['mC'][i1])
         masses = [(m1, mQ)]
     if grid == 'NNsame':
         m1 = abs(params['mN'][i1])
         masses = [(m1, mQ)]        
+        massesU = [(m1, muR)]                
+        massesD = [(m1, mdR)]                                
     if grid in ['C2-C1+', 'C2+C1-']:
         m1 = abs(params['mC'][i1])
         m2 = abs(params['mC'][i2])
         m1, m2 = max(m1, m2), min(m1, m2)
         masses = [(m1, m2, mQ)]        
-    if grid in ['NN']:
+    if grid == 'NN':
         m1 = params['mN'][i1]
         m2 = params['mN'][i2]
         sgn = np.sign(m1*m2)
         m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
         masses = [(m1, m2, mQ)]                
+        massesU = [(m1, m2, muR)]                
+        massesD = [(m1, m2, mdR)]                        
     if grid in ['NC+', 'NC-']:
         m2 = params['mC'][i2]
         m1 = params['mN'][i1] 
@@ -203,7 +210,11 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
         Fs = []
         if method == 'linear':
             table = Tabs.tables_lin[key]
-            for tab in table:
+            for i in xrange(len(table)):
+                tab = table[i]
+                if grid in ['NN', 'NNsame']:                    
+                    if i+1 == 4: masses = massesU
+                    if i+1 == 7: masses = massesD                    
                 Fs.append( tab(masses)[0] )                      
         if method == 'log':
             table = Tabs.tables_log[key]
@@ -212,9 +223,11 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
             for i in xrange(len(table)):
                 tab = table[i]
                 s = shift[i]
+                if grid == ['NN', 'NNsame']:                    
+                    if i+1 == 4: masses = massesU
+                    if i+1 == 7: masses = massesD                                    
                 F = exp(tab(masses)[0]) - s
                 Fs.append( F )  
-
         Fs = np.array(Fs)
         xsecs[sc] = np.dot(vec, Fs) * unit
     result = {}
@@ -257,19 +270,13 @@ def get_params(SLHAfile):
     mC.append( blocks["MASS"].entries[1000024] )
     mC.append( blocks["MASS"].entries[1000037] )
 
-    mQL = 0
-    mQL += blocks["MASS"].entries[1000001]
-    mQL += blocks["MASS"].entries[1000002]
-    mQL += blocks["MASS"].entries[1000003]
-    mQL += blocks["MASS"].entries[1000004]
-    mQL = mQL/4.
+    mqL = 0
+    mqL += blocks["MASS"].entries[1000001]
+    mqL += blocks["MASS"].entries[1000002]
+    mqL = mqL/2.
 
-    mQR = 0
-    mQR += blocks["MASS"].entries[2000001]
-    mQR += blocks["MASS"].entries[2000002]
-    mQR += blocks["MASS"].entries[2000003]
-    mQR += blocks["MASS"].entries[2000004]
-    mQR = mQR/4.
+    mdR = blocks["MASS"].entries[2000001]
+    muR = blocks["MASS"].entries[2000002]
 
     for ii in xrange(4):
         i = ii + 1
@@ -289,8 +296,9 @@ def get_params(SLHAfile):
         U.append([u1, u2])
 
     params = {}
-    params['mQL'] = mQL    
-    params['mQR'] = mQR    
+    params['mqL'] = mqL    
+    params['muR'] = muR    
+    params['mdR'] = mdR        
     params['mN'] = mN
     params['mC'] = mC
     params['N'] = np.array(N)
@@ -302,7 +310,7 @@ def get_params(SLHAfile):
 
 def ranges(params):
     range_memo = []
-    bound_dic = OrderedDict([('mQR', 6000), ('mQL', 6000)])
+    bound_dic = OrderedDict([('mdR', 6000), ('muR', 6000), ('mqL', 6000)])
     for p, bound in bound_dic.items():
         if params[p] >= bound: 
             memo = '{p} = {val} is out of range. {p} = {bound} was used.'.format(p=p,val=params[p], bound=bound)
@@ -378,11 +386,13 @@ def gNN( i, j, n ):
     return [elem1, elem2, elem3, elem4, elem5]
 
 def cNN( v, c ):
-    if c == 0: return v[0]**2
-    if c == 1: return v[1]**2 + v[2]**2
-    if c == 2: return 2.*( Lu * v[0] * v[1] - Ru * v[0] * v[2] )
-    if c == 3: return v[3]**2 + v[4]**2
-    if c == 4: return 2.*( Ld * v[0] * v[3] - Rd * v[0] * v[4] )    
+    if c == 0: return v[0]**2  #  F1 => F1
+    if c == 1: return v[1]**2 + v[2]**2  # qL   F2 => F2
+    if c == 2: return   2. * Lu * v[0] * v[1] # qL  F3 => F3
+    if c == 3: return - 2. * Ru * v[0] * v[2] # uR  F3 => F4
+    if c == 4: return v[3]**2 + v[4]**2 # qL  F4 => F5
+    if c == 5: return   2.* Ld * v[0] * v[3] # qL  F5 => F6
+    if c == 6: return - 2.* Rd * v[0] * v[4] # dR  F5 => F7 
 
 
 def gCC( i, j, u, v ):
@@ -415,7 +425,7 @@ def get_vec(run_mode, params, i1, i2):
 
     if run_mode in ['NN', 'NNsame']:
         gnn = gNN(i1, i2, N)
-        vec = [ cNN(gnn, i) for i in xrange(5) ]
+        vec = [ cNN(gnn, i) for i in xrange(7) ]
 
     if run_mode in ['NC+', 'NC-']:
         gnc = gNC(i1, i2, N, V, U)
