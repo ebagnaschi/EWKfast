@@ -73,7 +73,7 @@ class Get_Tables:
                 Far_shifted = Far + shift * np.ones( np.shape(Far) )
             F_lin.append( RegularGridInterpolator( masses, Far) )
             F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )
-            if grid in ['NN', 'NNsame'] and i_F in [3, 5]:
+            if grid in ['NN', 'NNsame'] and i_F > 1:
                 F_lin.append( RegularGridInterpolator( masses, Far) )
                 F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )                            
             shift_ar.append(shift)        
@@ -224,8 +224,8 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
                 tab = table[i]
                 s = shift[i]
                 if grid == ['NN', 'NNsame']:                    
-                    if i+1 == 4: masses = massesU
-                    if i+1 == 7: masses = massesD                                    
+                    if i+1 in [3, 5]: masses = massesU
+                    if i+1 in [7, 9]: masses = massesD                                    
                 F = exp(tab(masses)[0]) - s
                 Fs.append( F )  
         Fs = np.array(Fs)
@@ -262,21 +262,25 @@ def get_params(SLHAfile):
 
     mN, mC, N, V, U = [], [], [], [], []
 
-    mN.append( blocks["MASS"].entries[1000022] ) 
-    mN.append( blocks["MASS"].entries[1000023] ) 
-    mN.append( blocks["MASS"].entries[1000025] ) 
-    mN.append( blocks["MASS"].entries[1000035] ) 
+    mN.append( blocks['MASS'].entries[1000022] ) 
+    mN.append( blocks['MASS'].entries[1000023] ) 
+    mN.append( blocks['MASS'].entries[1000025] ) 
+    mN.append( blocks['MASS'].entries[1000035] ) 
 
-    mC.append( blocks["MASS"].entries[1000024] )
-    mC.append( blocks["MASS"].entries[1000037] )
+    mC.append( blocks['MASS'].entries[1000024] )
+    mC.append( blocks['MASS'].entries[1000037] )
+
+    # mqL = blocks['MSOFT'].entries[41]
+    # muR = blocks['MSOFT'].entries[44]    
+    # mdR = blocks['MSOFT'].entries[47]
 
     mqL = 0
-    mqL += blocks["MASS"].entries[1000001]
-    mqL += blocks["MASS"].entries[1000002]
+    mqL += blocks['MASS'].entries[1000001]
+    mqL += blocks['MASS'].entries[1000002]
     mqL = mqL/2.
 
-    mdR = blocks["MASS"].entries[2000001]
-    muR = blocks["MASS"].entries[2000002]
+    mdR = blocks['MASS'].entries[2000001]
+    muR = blocks['MASS'].entries[2000002]
 
     for ii in xrange(4):
         i = ii + 1
@@ -386,13 +390,15 @@ def gNN( i, j, n ):
     return [elem1, elem2, elem3, elem4, elem5]
 
 def cNN( v, c ):
-    if c == 0: return v[0]**2  #  F1 => F1
-    if c == 1: return v[1]**2 + v[2]**2  # qL   F2 => F2
-    if c == 2: return   2. * Lu * v[0] * v[1] # qL  F3 => F3
-    if c == 3: return - 2. * Ru * v[0] * v[2] # uR  F3 => F4
-    if c == 4: return v[3]**2 + v[4]**2 # qL  F4 => F5
-    if c == 5: return   2.* Ld * v[0] * v[3] # qL  F5 => F6
-    if c == 6: return - 2.* Rd * v[0] * v[4] # dR  F5 => F7 
+    if c == 0: return v[0]**2  #  F1 => F1  ()
+    if c == 1: return v[1]**2  #  F2 => F2  (QL)
+    if c == 2: return v[2]**2  #  F2 => F3  (uR)
+    if c == 3: return   2. * Lu * v[0] * v[1] # F3 => F4  (QL)
+    if c == 4: return - 2. * Ru * v[0] * v[2] # F3 => F5  (uR)
+    if c == 5: return v[3]**2 # F4 => F6  (QL)
+    if c == 6: return v[4]**2 # F4 => F7  (dR)
+    if c == 7: return   2.* Ld * v[0] * v[3] # F5 => F8  (QL)
+    if c == 8: return - 2.* Rd * v[0] * v[4] # F5 => F9  (dR)
 
 
 def gCC( i, j, u, v ):
@@ -425,7 +431,7 @@ def get_vec(run_mode, params, i1, i2):
 
     if run_mode in ['NN', 'NNsame']:
         gnn = gNN(i1, i2, N)
-        vec = [ cNN(gnn, i) for i in xrange(7) ]
+        vec = [ cNN(gnn, i) for i in xrange(9) ]
 
     if run_mode in ['NC+', 'NC-']:
         gnc = gNC(i1, i2, N, V, U)
