@@ -174,7 +174,7 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
         masses = [(m1, mQ)]
     if grid == 'NNsame':
         m1 = abs(params['mN'][i1])
-        masses = [(m1, mQ)]        
+        massesQ = [(m1, mQ)]        
         massesU = [(m1, muR)]                
         massesD = [(m1, mdR)]                                
     if grid in ['C2-C1+', 'C2+C1-']:
@@ -187,7 +187,7 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
         m2 = params['mN'][i2]
         sgn = np.sign(m1*m2)
         m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
-        masses = [(m1, m2, mQ)]                
+        massesQ = [(m1, m2, mQ)]                
         massesU = [(m1, m2, muR)]                
         massesD = [(m1, m2, mdR)]                        
     if grid in ['NC+', 'NC-']:
@@ -212,9 +212,10 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
             table = Tabs.tables_lin[key]
             for i in xrange(len(table)):
                 tab = table[i]
-                if grid in ['NN', 'NNsame']:                    
-                    if i+1 == 4: masses = massesU
-                    if i+1 == 7: masses = massesD                    
+                if grid in ['NN', 'NNsame']:
+                    masses = massesQ                    
+                    if i+1 in [3, 5]: masses = massesU
+                    if i+1 in [7, 9]: masses = massesD                    
                 Fs.append( tab(masses)[0] )                      
         if method == 'log':
             table = Tabs.tables_log[key]
@@ -223,7 +224,8 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
             for i in xrange(len(table)):
                 tab = table[i]
                 s = shift[i]
-                if grid == ['NN', 'NNsame']:                    
+                if grid == ['NN', 'NNsame']:
+                    masses = massesQ                    
                     if i+1 in [3, 5]: masses = massesU
                     if i+1 in [7, 9]: masses = massesD                                    
                 F = exp(tab(masses)[0]) - s
