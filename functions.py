@@ -15,6 +15,14 @@ def get_line(List):
         line += '  ' + str(List[i])
     return line
 
+def get_PDFname(pdf, order):
+    pdfname = pdf
+    if order == 'NLO': ost = 'nlo'
+    if order == 'LO': ost = 'lo'
+    if pdf == 'CT14':
+        pdfname = pdf + ost
+    return pdfname
+
 class Get_Tables:
 
     def __init__(self):
@@ -24,13 +32,14 @@ class Get_Tables:
 
     def add(self, key):
 
-        method = 'log'
+        #method = 'nearest'
+        method = 'linear'
 
-        order, rs, grid, sc = key
+        order, rs, pdf, grid = key
 
         dir_path = os.path.dirname(os.path.realpath(__file__))
 
-        gridname = key[2]
+        gridname = grid
         if 'same' in gridname:
             dim = 2
         else:
@@ -45,17 +54,16 @@ class Get_Tables:
         nF['C2+C1-'] = 3
         nF['C2-C1+'] = 3
 
-        basetag = '{order}-{rs}_{grid}'.format(order=order, rs=rs, grid=grid)            
-        tag = '{order}-{rs}_{grid}_{sc}'.format(order=order, rs=rs, grid=grid, sc=sc)            
+        pdfname = get_PDFname(pdf, order)
+        tag = '{order}-{rs}_{grid}_{pdfname}'.format(order=order, rs=rs, grid=grid, pdfname=pdfname)            
 
-        fpath_mass = os.path.join(dir_path, 'lookups', basetag)
-        fpath = os.path.join(dir_path, 'lookups', tag)                
-        m1 = np.load( fpath_mass + '.m1' )
-        m2 = np.load( fpath_mass + '.m2' )
+        fpath = os.path.join(dir_path, 'lookups', pdf, tag)                
+        m1 = np.load( fpath + '.m1' )
+        m2 = np.load( fpath + '.m2' )
         if dim == 2:
             masses = (m1, m2)
         if dim == 3:
-            m3 = np.load( fpath_mass + '.m3' )
+            m3 = np.load( fpath + '.m3' )
             masses = (m1, m2, m3)
  
         F_lin = []
@@ -71,18 +79,31 @@ class Get_Tables:
             else:
                 shift = 1.1*abs(minimum)
                 Far_shifted = Far + shift * np.ones( np.shape(Far) )
-            F_lin.append( RegularGridInterpolator( masses, Far) )
-            F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )
-            if grid in ['NN', 'NNsame'] and i_F > 1:
-                F_lin.append( RegularGridInterpolator( masses, Far) )
-                F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted)) )                            
+            F_lin.append( RegularGridInterpolator( masses, Far, method=method))
+            F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted), method=method))
             shift_ar.append(shift)        
+            if grid in ['NN', 'NNsame'] and i_F > 1:
+                F_lin.append( RegularGridInterpolator( masses, Far, method=method) )
+                F_log.append( RegularGridInterpolator( masses, np.log(Far_shifted), method=method) )                            
+                shift_ar.append(shift)        
         self.tables_lin[key] = F_lin
         self.tables_log[key] = F_log            
         self.shifts[key] = shift_ar            
 
-
 def load_tables(input_list, options):
+
+    Tabs = Get_Tables()
+
+    for data in input_list: 
+        rs, order, pdf, grid, = data['rs'], data['order'], data['pdf'], data['grid']        
+        key=(order, rs, pdf, grid)
+        if key not in Tabs.tables_lin.keys(): 
+            #print data['mode'], data['grid']
+            Tabs.add(key)
+    return Tabs
+
+
+def load_tables_pros(input_list, options):
 
     if options['ScaleVariation'] in ['ON', 'On', 'on']:
         scales = ['mu1', 'mu2', 'mu05']
@@ -111,7 +132,7 @@ def show_Fs(order,rs,grid,scale, masses, Tabs):
 
 def process_input(input_path):
     input_list = []
-    options = OrderedDict([('ScaleVariation', ''), ('Sort', ''), ('Cut', -1), ('Unit', 'pb')])
+    options = OrderedDict([('Sort', ''), ('Cut', -1), ('Unit', 'pb')])
     for line in open(input_path):
         if 'ignore below' in line: break
         line0 = line.split('#')[0]
@@ -121,11 +142,12 @@ def process_input(input_path):
             options[key] = var 
             continue
         elems = line.split('#')[0].split()            
-        if len(elems) != 3: continue
+        if len(elems) != 4: continue
         data = OrderedDict()
-        rs, order, mode = elems
+        rs, order, pdf, mode = elems
         data['rs'] = rs 
         data['order'] = order
+        data['pdf'] = pdf
         data['mode'] = mode
         indices = findall(r'[1-4]+', mode)
         indices = np.array(map(int, indices))
@@ -143,6 +165,8 @@ def process_input(input_path):
         if mode == 'C1-C2+': data['grid'] = 'C2+C1-' 
         if (mode.count('N'), mode.count('C'), mode.count('+')) == (1,1,1): data['grid'] = 'NC+'
         if (mode.count('N'), mode.count('C'), mode.count('-')) == (1,1,1): data['grid'] = 'NC-'
+        if data['grid'] not in ['CCsame', 'NNsame', 'NN']: continue # <======= HERE!!!!!
+        #if data['grid'] not in ['NNsame', 'C2+C1-', 'C2-C1+', 'NN', 'NC+', 'NC-']: continue # <======= HERE!!!!!        
         if data['grid'] == 'empty':
             print 'grid is empty'
             print mode, 'is not defined'
@@ -151,14 +175,9 @@ def process_input(input_path):
     return input_list, options
 
 
-def get_xsec(params, data, options, Tabs, method = 'log'):
+def get_xsec(params, data, options, Tabs, method = 'linear'):
 
-    rs, order, grid, indices = data['rs'], data['order'], data['grid'], data['indices']
-
-    if options['ScaleVariation'] in ['ON', 'On', 'on']:
-        scales = ['mu1', 'mu2', 'mu05']
-    else:
-        scales = ['mu1']
+    rs, order, pdf, grid, indices = data['rs'], data['order'], data['pdf'], data['grid'], data['indices']
 
     if options['Unit'] in ['fb']:
         unit = 1000.
@@ -187,15 +206,15 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
         m2 = params['mN'][i2]
         sgn = np.sign(m1*m2)
         m1, m2 = max(abs(m1), abs(m2)), sgn*min(abs(m1), abs(m2))
-        massesQ = [(m1, m2, mQ)]                
-        massesU = [(m1, m2, muR)]                
-        massesD = [(m1, m2, mdR)]                        
+        massesQ = [(m1, m2, mQ)]
+        massesU = [(m1, m2, muR)]
+        massesD = [(m1, m2, mdR)]
     if grid in ['NC+', 'NC-']:
         m2 = params['mC'][i2]
         m1 = params['mN'][i1] 
-        if order == 'LO':
-            m2 = np.sign(m1*m2)*m2
-            m1 = abs(m1)
+        # if order == 'LO':
+        #     m2 = np.sign(m1*m2)*m2
+        #     m1 = abs(m1)
         masses = [(m1, m2, mQ)]        
 
     warn = ''
@@ -204,36 +223,34 @@ def get_xsec(params, data, options, Tabs, method = 'log'):
 
     vec = get_vec(grid, params, i1, i2)
 
-    xsecs = OrderedDict()    
-    for sc in scales:
-        key=(order, rs, grid, sc)
+    key=(order, rs, pdf, grid)
+    Fs = []
+    if method == 'linear':
+        table = Tabs.tables_lin[key]
+        for i in xrange(len(table)):
+            tab = table[i]
+            if grid in ['NN', 'NNsame']:
+                masses = massesQ                    
+                if i+1 in [3, 5]: masses = massesU
+                if i+1 in [7, 9]: masses = massesD
+            Fs.append( tab(masses)[0] )                      
+    if method == 'log':
+        table = Tabs.tables_log[key]
+        shift = Tabs.shifts[key]        
         Fs = []
-        if method == 'linear':
-            table = Tabs.tables_lin[key]
-            for i in xrange(len(table)):
-                tab = table[i]
-                if grid in ['NN', 'NNsame']:
-                    masses = massesQ                    
-                    if i+1 in [3, 5]: masses = massesU
-                    if i+1 in [7, 9]: masses = massesD                    
-                Fs.append( tab(masses)[0] )                      
-        if method == 'log':
-            table = Tabs.tables_log[key]
-            shift = Tabs.shifts[key]        
-            Fs = []
-            for i in xrange(len(table)):
-                tab = table[i]
-                s = shift[i]
-                if grid == ['NN', 'NNsame']:
-                    masses = massesQ                    
-                    if i+1 in [3, 5]: masses = massesU
-                    if i+1 in [7, 9]: masses = massesD                                    
-                F = exp(tab(masses)[0]) - s
-                Fs.append( F )  
-        Fs = np.array(Fs)
-        xsecs[sc] = np.dot(vec, Fs) * unit
+        for i in xrange(len(table)):
+            tab = table[i]
+            s = shift[i]
+            if grid in ['NN', 'NNsame']:
+                masses = massesQ                    
+                if i+1 in [3, 5]: masses = massesU
+                if i+1 in [7, 9]: masses = massesD                                    
+            F = exp(tab(masses)[0]) - s
+            Fs.append( F )  
+    Fs = np.array(Fs)
+    xsec = np.dot(vec, Fs) * unit
     result = {}
-    result['xsecs'] = xsecs
+    result['xsec'] = xsec
     result['warn']  = warn    
     return result
 
@@ -246,15 +263,15 @@ def get_results(input_list, params, options, Tabs, method):
 
     results = OrderedDict()
     for data in input_list: 
-        order, rs, mode, grid, indices = data['order'], data['rs'], data['mode'], data['grid'], data['indices']
+        order, rs, mode, pdf, grid, indices = data['order'], data['rs'], data['mode'], data['pdf'], data['grid'], data['indices']
         res = get_xsec(params, data, options, Tabs, method)
-        if res['xsecs']['mu1'] > thres: 
-            results[(order, rs, mode)] = res
+        if res['xsec'] > thres: 
+            results[(order, rs, pdf, mode)] = res
     return results
 
 def sort_results(results):
     sorted_results = OrderedDict()
-    for key, data in sorted(results.items(), key=lambda x:x[1]['xsecs']['mu1'], reverse=True):
+    for key, data in sorted(results.items(), key=lambda x:x[1]['xsec'], reverse=True):
         sorted_results[key] = data
     return sorted_results
 

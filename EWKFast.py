@@ -47,18 +47,13 @@ if __name__ == "__main__":
     fout = open('output.ewk', 'w')
 
     extra = ''
-    if options['ScaleVariation'] in ['ON', 'on', 'On']: extra = '                 mu=2                mu=0.5' 
-    out_string = 'Energy  Precision  Process    mu=1' + extra + '\n'  
+    out_string = 'Energy  Precision  PDF  Process' + extra + '\n'  
 
     for key, data in results.items():
-        order, rs, mode = key
-        xsecs, warn = data['xsecs'], data['warn']
-        if options['ScaleVariation'] in ['ON', 'on', 'On']:           
-            x1, x2, x05 = str(xsecs['mu1']).ljust(18), str(xsecs['mu2']).ljust(18), str(xsecs['mu05']).ljust(18)
-            result = '{rs}      {order}        {mode}    {x1}   {x2}  {x05}'.format(rs=rs, order=order.ljust(3), mode=mode.ljust(7), x1=x1, x2=x2, x05=x05)
-        else:
-            x1 = str(xsecs['mu1']).ljust(18)
-            result = '{rs}      {order}        {mode}    {x1}'.format(rs=rs, order=order.ljust(3), mode=mode.ljust(7), x1=x1)
+        order, rs, pdf, mode = key
+        xsec, warn = data['xsec'], data['warn']
+        x1 = str(xsec).ljust(18)
+        result = '{rs}      {order}   {pdf}        {mode}    {x1}'.format(rs=rs, order=order.ljust(3), pdf=pdf.ljust(10), mode=mode.ljust(7), x1=x1)
         out_string += result +' '+ warn + '\n'
     out_string += '\n'
 
@@ -71,7 +66,6 @@ if __name__ == "__main__":
     if len(range_memo) > 0:
         out_string += '\n'
         for memo in range_memo: out_string += memo + '\n'
-
 
 
     print out_string

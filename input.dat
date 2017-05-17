@@ -3,10 +3,14 @@ Unit: pb   # fb or pb
 Sort: ON
 # Cut: 0.01  # show only XS larger than the cut 
 
-13 NLO C1C1  
-13 NLO C1+C2-  
-13 NLO C1-C2+  
-13 NLO C2C2
+13 LO NNPDF30 N1N1  
+13 LO NNPDF30 N2N2  
+13 LO NNPDF30 N3N3  
+13 LO NNPDF30 N4N4  
+13 LO NNPDF30 C1C1
+13 LO NNPDF30 C2C2  
+13 LO NNPDF30 N1N2
+13 LO NNPDF30 N2N3
 
 
 ####### ignore below #######
