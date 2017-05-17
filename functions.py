@@ -279,6 +279,26 @@ def get_params(SLHAfile):
 
     blocks, decays = readSLHAFile(SLHAfile)
 
+    cw, sw = 0, 0
+    try:
+        g1 = blocks['GAUGE'].entries[1]
+        g2 = blocks['GAUGE'].entries[2]
+        sw2 = g1**2 / (g1**2 + g2**2)
+        sw = sqrt(sw2)
+        cw = sqrt(1. - sw2) 
+    except: pass
+    if cw == 0 and sw == 0:
+        try:
+            mz = blocks['SMINPUTS'].entries[4]    
+            mw = blocks['MASS'].entries[24]    
+            cw2 = mw**2/mz**2 
+            cw = sqrt(cw2)
+            sw = sqrt(1. - cw2)
+        except: pass
+    if cw == 0 and sw == 0:
+        sw = sqrt(1. - 80.410003662109375**2 / 91.186996459960938**2)
+        cw = sqrt(1 - sw**2)
+        
     mN, mC, N, V, U = [], [], [], [], []
 
     mN.append( blocks['MASS'].entries[1000022] ) 
@@ -327,6 +347,8 @@ def get_params(SLHAfile):
     params['N'] = np.array(N)
     params['V'] = np.array(V)
     params['U'] = np.array(U)
+    params['sw'] = sw
+    params['cw'] = cw
 
     return params
 
@@ -363,33 +385,27 @@ def ranges(params):
 
 #=================================================#
 
-sw = sqrt(1. - 80.410003662109375**2 / 91.186996459960938**2)
-cw = sqrt(1 - sw**2)
-r2 = sqrt(2.)
-
-deno = sw * cw
-Lu = ( 1./2. - 2./3. * sw**2 ) / deno
-Ld = (-1./2 - (-1./3.) * sw**2 ) / deno
-Ru = (-2./3. * sw**2 ) / deno
-Rd = ( - (-1./3.) * sw**2 ) / deno
-
-def Lut(i, n): 
+def Lut(i, n, sw, cw): 
+    Lu = ( 1./2. - 2./3. * sw**2 ) / (sw * cw)
     return (n[i, 0]*cw + n[i, 1]*sw) * (2./3.) + (-n[i, 0]*sw + n[i, 1]*cw) * Lu
 
-def Ldt(i, n): 
+def Ldt(i, n, sw, cw): 
+    Ld = (-1./2 - (-1./3.) * sw**2 ) / (sw * cw) 
     return (n[i, 0]*cw + n[i, 1]*sw) * (-1./3.) + (-n[i, 0]*sw + n[i, 1]*cw) * Ld
 
-def Rut(i, n): 
+def Rut(i, n, sw, cw): 
+    Ru = (-2./3. * sw**2 ) / (sw * cw)
     return (n[i, 0]*cw + n[i, 1]*sw) * (2./3.) + (-n[i, 0]*sw + n[i, 1]*cw) * Ru
 
-def Rdt(i, n): 
+def Rdt(i, n, sw, cw): 
+    Rd = ( - (-1./3.) * sw**2 ) / (sw * cw)    
     return (n[i, 0]*cw + n[i, 1]*sw) * (-1./3.) + (-n[i, 0]*sw + n[i, 1]*cw) * Rd
 
-def gNC( i, j, n, v, u ):
+def gNC( i, j, n, v, u, sw, cw ):
     elem1 = n[i, 1] * v[j, 0] - n[i, 3] * v[j, 1]/sqrt(2.) 
-    elem2 = v[j, 0] * Lut(i, n)
+    elem2 = v[j, 0] * Lut(i, n, sw, cw)
     elem3 = n[i, 1] * u[j, 0] + n[i, 2] * u[j, 1]/sqrt(2.) 
-    elem4 = u[j, 0] * Ldt(i, n)
+    elem4 = u[j, 0] * Ldt(i, n, sw, cw)
     return [elem1, elem2, elem3, elem4]
 
 def cNC( v, c ):
@@ -400,15 +416,19 @@ def cNC( v, c ):
     if c == 4: return 2.* v[0]*v[2]
     if c == 5: return 2.* v[1]*v[3]
 
-def gNN( i, j, n ):
+def gNN( i, j, n, sw, cw ):
     elem1 = n[i, 3] * n[j, 3] - n[i, 2] * n[j, 2]
-    elem2 = Lut(i, n) * Lut(j, n)
-    elem3 = Rut(i, n) * Rut(j, n)
-    elem4 = Ldt(i, n) * Ldt(j, n)
-    elem5 = Rdt(i, n) * Rdt(j, n)
+    elem2 = Lut(i, n, sw, cw) * Lut(j, n, sw, cw)
+    elem3 = Rut(i, n, sw, cw) * Rut(j, n, sw, cw)
+    elem4 = Ldt(i, n, sw, cw) * Ldt(j, n, sw, cw)
+    elem5 = Rdt(i, n, sw, cw) * Rdt(j, n, sw, cw)
     return [elem1, elem2, elem3, elem4, elem5]
 
-def cNN( v, c ):
+def cNN( v, c, sw, cw ):
+    Lu = ( 1./2. - 2./3. * sw**2 ) / (sw * cw)
+    Ld = (-1./2 - (-1./3.) * sw**2 ) / (sw * cw) 
+    Ru = (-2./3. * sw**2 ) / (sw * cw)
+    Rd = ( - (-1./3.) * sw**2 ) / (sw * cw)        
     if c == 0: return v[0]**2  #  F1 => F1  ()
     if c == 1: return v[1]**2  #  F2 => F2  (QL)
     if c == 2: return v[2]**2  #  F2 => F3  (uR)
@@ -441,6 +461,8 @@ def get_vec(run_mode, params, i1, i2):
     V = params['V']
     U = params['U']
     N = params['N']
+    sw = params['sw']
+    cw = params['cw']
 
     if run_mode in ['CCsame', 'C2+C1-', 'C2-C1+']:
         gcc = gCC(i1, i2, U, V)
@@ -449,12 +471,12 @@ def get_vec(run_mode, params, i1, i2):
         vec = [ cCC(gcc, i) for i in xrange(n) ]
 
     if run_mode in ['NN', 'NNsame']:
-        gnn = gNN(i1, i2, N)
-        vec = [ cNN(gnn, i) for i in xrange(9) ]
+        gnn = gNN(i1, i2, N, sw, cw)
+        vec = [ cNN(gnn, i, sw, cw) for i in xrange(9) ]
 
     if run_mode in ['NC+', 'NC-']:
-        gnc = gNC(i1, i2, N, V, U)
-        vec = [ cNC(gnc, i) for i in xrange(6) ]
+        gnc = gNC(i1, i2, N, V, U, sw, cw)
+        vec = [ cNC(gnc, i, sw, cw) for i in xrange(6) ]
 
     return vec
 
