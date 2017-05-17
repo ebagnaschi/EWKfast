@@ -165,7 +165,7 @@ def process_input(input_path):
         if mode == 'C1-C2+': data['grid'] = 'C2+C1-' 
         if (mode.count('N'), mode.count('C'), mode.count('+')) == (1,1,1): data['grid'] = 'NC+'
         if (mode.count('N'), mode.count('C'), mode.count('-')) == (1,1,1): data['grid'] = 'NC-'
-        if data['grid'] not in ['CCsame', 'NNsame', 'NN']: continue # <======= HERE!!!!!
+        #if data['grid'] not in ['CCsame', 'NNsame', 'NN']: continue # <======= HERE!!!!!
         #if data['grid'] not in ['NNsame', 'C2+C1-', 'C2-C1+', 'NN', 'NC+', 'NC-']: continue # <======= HERE!!!!!        
         if data['grid'] == 'empty':
             print 'grid is empty'
@@ -476,7 +476,7 @@ def get_vec(run_mode, params, i1, i2):
 
     if run_mode in ['NC+', 'NC-']:
         gnc = gNC(i1, i2, N, V, U, sw, cw)
-        vec = [ cNC(gnc, i, sw, cw) for i in xrange(6) ]
+        vec = [ cNC(gnc, i) for i in xrange(6) ]
 
     return vec
 
